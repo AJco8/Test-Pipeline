@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+
 def in_df(df:pd.DataFrame,*cols:str)->bool:
     """Checks if columns are in DataFrame
 
@@ -13,7 +14,7 @@ def in_df(df:pd.DataFrame,*cols:str)->bool:
     if False in [col in df.columns for col in cols]: return False
     else: return True
 
-def load_data(path:str,colnames:dict)->pd.DataFrame:
+def load_data(path:str)->pd.DataFrame:
     """Converts telemetry CSV file into Pandas Dataframe
 
     Args:
@@ -26,18 +27,11 @@ def load_data(path:str,colnames:dict)->pd.DataFrame:
         pandas.DataFrame: Telemetry DataFrame
     """
     df = pd.read_csv(path)
-    df.rename(columns=colnames, inplace=True)
-
-    # Check if time column is included in CSV file
-    if "time" not in df.columns:
-        raise ValueError("Missing required time column")
 
     #convert all data to numeric    
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Sort by time
-    df = df.sort_values("time").reset_index(drop=True)
     #TODO need to automatically cut out rows where time = NaN
 
     return df
@@ -45,7 +39,7 @@ def load_data(path:str,colnames:dict)->pd.DataFrame:
 # Process Data
 from time_series import butterworth, find_offset, offset
 
-def uniform_resample(df: pd.DataFrame, time_col: str, dt: float) -> pd.DataFrame:
+def uniform_resample(df: pd.DataFrame, dt: float, time_col: str="time") -> pd.DataFrame:
     """Resample values to match a uniform time rate
 
     Args:
@@ -104,8 +98,8 @@ def sync(df:pd.DataFrame,dt,ref_col:str,*key_cols:str):
 
         time_offset = find_offset(ref, sig, dt, 0.5)
         if abs(time_offset) > 1e-6:
-            df[col] = offset(t, sig, offset)
-        df.attrs["estimated_offset"][col] = time_offset
+            df[col] = offset(t, sig, time_offset)
+        #df.attrs["estimated_offset"][col] = time_offset
     return df
 
 def filter(data:pd.DataFrame,rate):
@@ -146,6 +140,7 @@ def parameters(data:pd.DataFrame)->pd.DataFrame:
         temp = data["temp_engine"].to_numpy(dtype=float)
         params["dtemp_dt"] = np.gradient(temp, t, edge_order=1)
     
+    #Mass Flow Rate + Mix Ratio
     if in_df(data,"dm_total"):
         dm_total = data["dm_total"]
     elif in_df(data,"dm_ox","dm_fuel"):
@@ -155,70 +150,124 @@ def parameters(data:pd.DataFrame)->pd.DataFrame:
         params['dm_total'] = dm_total
 
         mr = np.full(dm_ox.shape,np.nan)
-        for i in range(max(mr.size)):
+        for i in range(mr.size):
             if dm_ox[i]>1e-6 and dm_fuel[i]>1e-6:
                 mr[i] = dm_ox[i] / dm_fuel[i]
         params['Mix Ratio'] = mr
-
     else: 
         print("No mass flow rate column in DataFrame")
         return pd.DataFrame(params)
 
-
+    #Specific Impulse
     thrust = data["thrust"].to_numpy(dtype=float)
-    Isp = np.zeros(thrust.shape)
-    Isp[dm_total>0] = thrust / (dm_total * 9.81)
+    Isp = np.zeros(dm_total.shape)
+    Isp[dm_total>0] = thrust[dm_total>0] / (dm_total[dm_total>0] * 9.81)
     params['Specific Impulse'] = Isp
     
     return pd.DataFrame(params)
 
 # Plotting
 import matplotlib.pyplot as plt
-def df_plot(df:pd.DataFrame, y_col:str, x_col:str="time",show=False)->None:
-    plt.figure
+def time_plot(df:pd.DataFrame, y_col:str, x_col:str="time",out:str="Plots",show=False,names=None)->None:
+    """Plots given column against time
+
+    Args:
+        df (pd.DataFrame): _description_
+        y_col (str): _description_
+        x_col (str, optional): _description_. Defaults to "time".
+        out (str, optional): _description_. Defaults to "Plots".
+        show (bool, optional): _description_. Defaults to False.
+        names (_type_, optional): _description_. Defaults to None.
+    """
+    plt.figure()
     plt.plot(df[x_col].to_numpy(dtype=float),df[y_col].to_numpy(dtype=float))
     plt.xlabel("Time")
-    plt.ylabel(y_col)
+    if names:
+        plt.ylabel(names[y_col])
+    else:
+        plt.ylabel(y_col)
+    plt.savefig(f"{out}/{y_col}")
     if show: plt.show()
 
-def plot_all(df):
-    cols = df.columns
-    time = df["time"].to_numpy(dtype=float)
-    name = {
-        "Pc": "P_c",
-        "thrust": "F",
-        "dm_ox": "dm_ox",
-        "dm_fuel": "dm_fuel",
-        "Pinj_ox": "P_{inj,ox}",
-        "temp_engine": "T",
-        "Pcool": "P_cool"
-    }
-    plt.figure()
-    for i,col in enumerate(df.columns):
+# Main Pipeline
+def pipeline(telem_data:pd.DataFrame,rate:float|int,names:dict=None,reference:str=None,output="out"):
+    """Main Pipeline
+
+    Args:
+        telem_data (pd.DataFrame): Telemetry Data
+        options (dict): options for the program
+        output (str, optional): Folder for output data and plots, defaults to "out".
+
+    Raises:
+        ValueError: Time column required
+    """
+    
+    rate = options["rate"]
+    dt = 1/rate
+
+    # Process Data
+    if names:
+        col_names = options["column_names"]
+        rename = {value: key for key, value in col_names.items()}
+        telem_data.rename(columns=rename, inplace=True)
+    # Check if time column is included in CSV file  
+    if "time" not in telem_data.columns:
+        raise ValueError("Missing required time column")
+    
+    data = telem_data.sort_values("time").reset_index(drop=True)
+
+    data = uniform_resample(telem_data,dt)
+
+    if reference:
+        ref_col = rename[reference]
+        keys = [col for col in data.columns if col not in ["time",ref_col]]
+        data = sync(data,dt,ref_col,*keys)
+
+    data = filter(data,rate)
+
+    # Derive Relavent Values
+    params = parameters(data)
+    
+    out_data = pd.concat([data,params])
+    
+    # Plot
+    for col in data.columns:
         if col == "time": continue
-        plt.subplot(len(cols)-1,1,i)
-        plt.plot(time,df[col].to_numpy(dtype=float))
-        plt.xlabel("Time")
-        plt.ylabel(col)
-    plt.show()
+        time_plot(data,col,out="out/Plots")
+
+    # Save Everything
+
 
 if __name__ == "__main__":
-    names = {
-        "time": "time_s",
-        "Pc": "pc_pa",
-        "thrust": "thrust_n",
-        "dm_ox": "mdot_ox_kg_s",
-        "dm_fuel": "mdot_fuel_kg_s",
-        "Pinj_ox": "pinj_ox_pa",
-        "temp_engine": "temp_engine_k",
-        "Pcool": "pcool_pa"
+    name = {
+        'Chamber Pressure': 'Pc',
+        'Thrust': 'thrust',
+        'Oxygen Mass Flow Rate':'dm_ox', 
+        'Fuel Mass Flow Rate': 'dm_fuel', 
+        'Total Mass Flow Rate': 'dm_total', 
+        'Oxygen Injector Pressure': 'Pinj_ox', 
+        'Fuel Injector Pressure': 'Pinj_fuel', 
+        'Injector Pressure': 'Pinj', 
+        'Engine Temp': 'temp_engine', 
+        'Coolant Pressure': 'Pcool',
+        'Specific Impulse': 'Isp'
+        }
+    options = {
+        "column_names":{
+            "time": "time_s",
+            "Pc": "pc_pa",
+            "thrust": "thrust_n",
+            "dm_ox": "mdot_ox_kg_s",
+            "dm_fuel": "mdot_fuel_kg_s",
+            "Pinj_ox": "pinj_ox_pa",
+            "temp_engine": "temp_engine_k",
+            "Pcool": "pcool_pa"
+        },
+        "rate": 200,#Hz
+        "reference":"pc_pa"
     }
-    rename = {value: key for key, value in names.items()}
-    data = load_data("data/simulated_telemetry.csv",rename)
-    print("Loaded")
-    params = parameters(data)
-    print("Parameters")
-    df_plot(pd.concat([data,params["Specific Impulse"]]),"Specific Impulse")
-    #plot_all(pd.concat([data,params]))
+    data = load_data("data/simulated_telemetry.csv")
+    pipeline(data,options["rate"],options["column_names"],options["reference"])
+    
 
     
