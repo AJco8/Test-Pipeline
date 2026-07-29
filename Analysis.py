@@ -110,7 +110,7 @@ def filter(data:pd.DataFrame,rate):
         rate (float|int): Desired rate of sampling
 
     Returns:
-        pandas.DataFrame: _description_
+        pandas.DataFrame: DataFrame with usable data
     """
     for col in data.columns:
         #Time should not be filtered
@@ -169,16 +169,7 @@ def parameters(data:pd.DataFrame)->pd.DataFrame:
 # Plotting
 import matplotlib.pyplot as plt
 def time_plot(df:pd.DataFrame, y_col:str, x_col:str="time",out:str="Plots",show=False,names=None)->None:
-    """Plots given column against time
-
-    Args:
-        df (pd.DataFrame): _description_
-        y_col (str): _description_
-        x_col (str, optional): _description_. Defaults to "time".
-        out (str, optional): _description_. Defaults to "Plots".
-        show (bool, optional): _description_. Defaults to False.
-        names (_type_, optional): _description_. Defaults to None.
-    """
+    """Plots given column against time"""
     plt.figure()
     plt.plot(df[x_col].to_numpy(dtype=float),df[y_col].to_numpy(dtype=float))
     plt.xlabel("Time")
@@ -190,24 +181,22 @@ def time_plot(df:pd.DataFrame, y_col:str, x_col:str="time",out:str="Plots",show=
     if show: plt.show()
 
 # Main Pipeline
-def pipeline(telem_data:pd.DataFrame,rate:float|int,names:dict=None,reference:str=None,output="out"):
+def pipeline(telem_data:pd.DataFrame,rate:float|int,names:dict=None,reference:str=None,output="out"): # pyright: ignore[reportArgumentType]
     """Main Pipeline
 
     Args:
         telem_data (pd.DataFrame): Telemetry Data
-        options (dict): options for the program
         output (str, optional): Folder for output data and plots, defaults to "out".
 
     Raises:
         ValueError: Time column required
     """
     
-    rate = options["rate"]
     dt = 1/rate
 
     # Process Data
     if names:
-        col_names = options["column_names"]
+        col_names = column_names
         rename = {value: key for key, value in col_names.items()}
         telem_data.rename(columns=rename, inplace=True)
     # Check if time column is included in CSV file  
@@ -228,14 +217,16 @@ def pipeline(telem_data:pd.DataFrame,rate:float|int,names:dict=None,reference:st
     # Derive Relavent Values
     params = parameters(data)
     
-    out_data = pd.concat([data,params])
+    out_data = pd.concat([data,params],axis=1)
     
     # Plot
-    for col in data.columns:
+    for col in out_data.columns:
         if col == "time": continue
-        time_plot(data,col,out="out/Plots")
+        time_plot(out_data,col,out="out/Plots")
 
     # Save Everything
+    out_data.to_csv(output+'/Parameters.csv', index=False)
+    print(out_data)
 
 
 if __name__ == "__main__":
@@ -252,22 +243,17 @@ if __name__ == "__main__":
         'Coolant Pressure': 'Pcool',
         'Specific Impulse': 'Isp'
         }
-    options = {
-        "column_names":{
-            "time": "time_s",
-            "Pc": "pc_pa",
-            "thrust": "thrust_n",
-            "dm_ox": "mdot_ox_kg_s",
-            "dm_fuel": "mdot_fuel_kg_s",
-            "Pinj_ox": "pinj_ox_pa",
-            "temp_engine": "temp_engine_k",
-            "Pcool": "pcool_pa"
-        },
-        "rate": 200,#Hz
-        "reference":"pc_pa"
+    column_names = {
+        "time": "time_s",
+        "Pc": "pc_pa",
+        "thrust": "thrust_n",
+        "dm_ox": "mdot_ox_kg_s",
+        "dm_fuel": "mdot_fuel_kg_s",
+        "Pinj_ox": "pinj_ox_pa",
+        "temp_engine": "temp_engine_k",
+        "Pcool": "pcool_pa"
     }
+    rate = 200 #Hz
+    reference = "pc_pa"
     data = load_data("data/simulated_telemetry.csv")
-    pipeline(data,options["rate"],options["column_names"],options["reference"])
-    
-
-    
+    pipeline(data,rate,column_names,reference)
