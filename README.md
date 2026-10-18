@@ -27,7 +27,7 @@ Full analysis for rocket engine test data.
 ![](./out/Plots/Mix%20Ratio.png)
 #### Isp (Calculated)
 ![](./out/Plots/Specific%20Impulse.png)
-- anomaly detection system
+#### Anomaly Detection System
 ![](./out/Plots/Anomalies.md)
 
 

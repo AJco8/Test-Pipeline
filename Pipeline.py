@@ -1,3 +1,4 @@
+"""Command Line Interface for Data Analysis Pipeline"""
 import pandas as pd
 import argparse
 from pathlib import Path
