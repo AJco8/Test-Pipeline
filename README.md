@@ -28,6 +28,6 @@ Full analysis for rocket engine test data.
 #### Isp (Calculated)
 ![](./out/Plots/Specific%20Impulse.png)
 - anomaly detection system
-![](./out/Plots/Specific%20Impulse.png)
+![](./out/Plots/Anomalies.md)
 
 
