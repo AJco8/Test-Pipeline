@@ -1,0 +1,30 @@
+{
+    "columns":{
+        "Time":"time",
+        "Chamber Pressure": "Pc",
+        "Thrust": "thrust",
+        "Oxygen Mass Flow Rate":"dm_ox", 
+        "Fuel Mass Flow Rate": "dm_fuel", 
+        "Total Mass Flow Rate": "dm_total", 
+        "Oxygen Injector Pressure": "Pinj_ox", 
+        "Fuel Injector Pressure": "Pinj_fuel", 
+        "Injector Pressure": "Pinj", 
+        "Engine Temp": "temp_engine", 
+        "Coolant Pressure": "Pcool"
+    },
+    "limits":{
+        "Pc_min": 1e5,
+        "Pc_max": 30e6,
+        "thrust_min": -1e3,
+        "thrust_max": 2e6,
+        "MR_min": 0.1,
+        "MR_max": 20.0,
+        "temp_max": 1500.0,
+        "dPinj_min": 1e4
+    },
+    "iforest":{
+        "enabled": true,
+        "contamination": 0.01,
+        "random_state": 7
+    }
+}
